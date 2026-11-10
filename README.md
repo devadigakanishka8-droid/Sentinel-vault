@@ -21,8 +21,6 @@ First launch: type a master passphrase (it protects every file key - do not forg
 - ui: Swing screens (App is the entry point), colours #101826 and #F1EAD9
 - TestBackend: end-to-end test
 
-## Team SE_A_06
-Guide: Prof. Rujata Chaudhari
 
 ## Two laptops (client / server, encrypted with TLS)
 One laptop holds the vault and runs the server; other laptops connect to it over the same Wi-Fi or hotspot.
