@@ -72,6 +72,12 @@ final class Fmt {
             case "ENABLE_USER": return "account enable";
             case "DISABLE_USER": return "account disable";
             case "VIEW": return "file list";
+            case "UPLOAD_VERSION": return "new version upload";
+            case "RESTORE_VERSION": return "version restore";
+            case "VIEW_VERSIONS": return "version history";
+            case "CREATE_FOLDER": return "folder creation";
+            case "MOVE_FILE": return "file move";
+            case "DELETE_FOLDER": return "folder delete";
             default: return action.toLowerCase(Locale.ENGLISH).replace('_', ' ');
         }
     }
@@ -88,6 +94,11 @@ final class Fmt {
             case "ENABLE_USER": return "enabled an account";
             case "DISABLE_USER": return "disabled an account";
             case "VIEW": return "viewed the file list";
+            case "UPLOAD_VERSION": return "uploaded a new version of";
+            case "RESTORE_VERSION": return "restored an older version of";
+            case "CREATE_FOLDER": return "created a folder";
+            case "MOVE_FILE": return "moved";
+            case "DELETE_FOLDER": return "deleted a folder";
             default: return noun(action);
         }
     }
@@ -101,6 +112,14 @@ final class Fmt {
             case "FAILED": return who + " &mdash; " + noun(e.getAction()) + " failed" + file;
             default:       return who + " " + verb(e.getAction()) + file;
         }
+    }
+
+    /** 1536 becomes "1.5 KB". */
+    static String size(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        double v = bytes / 1024.0;
+        if (v < 1024) return String.format(Locale.ENGLISH, "%.1f KB", v);
+        return String.format(Locale.ENGLISH, "%.1f MB", v / 1024.0);
     }
 
     static String greeting() {

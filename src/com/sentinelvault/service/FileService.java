@@ -6,6 +6,7 @@ import com.sentinelvault.db.UserDAO;
 import com.sentinelvault.model.FileEntry;
 import com.sentinelvault.model.Role;
 import com.sentinelvault.model.User;
+import com.sentinelvault.model.VersionEntry;
 import com.sentinelvault.security.EncryptionUtil;
 import com.sentinelvault.security.KeyVault;
 import com.sentinelvault.security.PermissionService;
@@ -93,8 +94,9 @@ public class FileService {
             auditDAO.logAction(user.getId(), fileId, "DELETE", "DENIED");
             throw new SecurityException("Your role (" + user.getRole() + ") cannot delete files.");
         }
-        fileDAO.softDelete(fileId);                 // key erased: the data is now unrecoverable
-        new File(entry.getStoredPath()).delete();   // and the encrypted copy is removed too
+        List<String> copies = fileDAO.listStoredPaths(fileId);   // every version has its own encrypted copy
+        fileDAO.softDelete(fileId);                 // all keys erased: the data is now unrecoverable
+        for (String path : copies) new File(path).delete();   // and the encrypted copies are removed too
         auditDAO.logAction(user.getId(), fileId, "DELETE", "SUCCESS");
     }
 
@@ -113,6 +115,96 @@ public class FileService {
             }
         }
         return visible;
+    }
+
+    // ---------- versions ----------
+
+    /** Every version of a file, newest first. Only people who may open the file can see its history. */
+    public List<VersionEntry> versions(User caller, int fileId) throws Exception {
+        User user = currentUser(caller);
+        FileEntry entry = requireFile(fileId);
+        boolean isUploader = entry.getOwnerId() == user.getId();
+        if (!PermissionService.canPerform(user.getRole(), PermissionService.VIEW)
+                || !PermissionService.canAccessFile(user.getRole(), entry.getAccessLevel(), isUploader)) {
+            auditDAO.logAction(user.getId(), fileId, "VIEW_VERSIONS", "DENIED");
+            throw new SecurityException("You do not have access to this file.");
+        }
+        return fileDAO.listVersions(fileId);
+    }
+
+    /** Adds a new version of an existing file. Only the uploader or an Owner may do this. */
+    public int uploadNewVersion(User caller, int fileId, File source, String comment) throws Exception {
+        User user = currentUser(caller);
+        FileEntry entry = requireFile(fileId);
+        requireVersionRights(user, entry, "UPLOAD_VERSION");
+        if (source == null || !source.isFile()) throw new IllegalArgumentException("Choose a valid file.");
+        if (source.length() > MAX_FILE_BYTES) throw new IllegalArgumentException("File is too large (max 50 MB).");
+
+        SecretKey key = EncryptionUtil.generateKey();           // every version gets its own key
+        String wrappedKey = KeyVault.wrap(key);
+        File stored = new File(VAULT_DIR, UUID.randomUUID() + ".enc");
+        EncryptionUtil.encryptFile(source, stored, key);
+        try {
+            int versionNo = fileDAO.addVersion(fileId, user.getId(), wrappedKey, stored.getPath(),
+                    source.length(), sha256Of(source), cleanComment(comment));
+            auditDAO.logAction(user.getId(), fileId, "UPLOAD_VERSION", "SUCCESS");
+            return versionNo;
+        } catch (Exception e) {
+            stored.delete();
+            throw e;
+        }
+    }
+
+    /** Decrypts one chosen version (not necessarily the current one). */
+    public void downloadVersion(User caller, int fileId, int versionNo, File destination) throws Exception {
+        User user = currentUser(caller);
+        FileEntry entry = requireFile(fileId);
+        boolean isUploader = entry.getOwnerId() == user.getId();
+        if (!PermissionService.canPerform(user.getRole(), PermissionService.DOWNLOAD)
+                || !PermissionService.canAccessFile(user.getRole(), entry.getAccessLevel(), isUploader)) {
+            auditDAO.logAction(user.getId(), fileId, "DOWNLOAD", "DENIED");
+            throw new SecurityException("You do not have access to this file.");
+        }
+        FileDAO.StoredVersion version = fileDAO.getVersion(fileId, versionNo);
+        if (version == null) throw new IllegalArgumentException("Version " + versionNo + " not found.");
+        try {
+            SecretKey key = KeyVault.unwrap(version.wrappedKey());
+            EncryptionUtil.decryptFile(new File(version.storedPath()), destination, key);
+        } catch (AEADBadTagException e) {
+            auditDAO.logAction(user.getId(), fileId, "DOWNLOAD", "FAILED");
+            throw new SecurityException("Integrity check failed: the file was modified or the key is wrong.");
+        }
+        auditDAO.logAction(user.getId(), fileId, "DOWNLOAD", "SUCCESS");
+    }
+
+    /** Makes an older version the current one again. Only the uploader or an Owner may do this. */
+    public void restoreVersion(User caller, int fileId, int versionNo) throws Exception {
+        User user = currentUser(caller);
+        FileEntry entry = requireFile(fileId);
+        requireVersionRights(user, entry, "RESTORE_VERSION");
+        FileDAO.StoredVersion version = fileDAO.getVersion(fileId, versionNo);
+        if (version == null) throw new IllegalArgumentException("Version " + versionNo + " not found.");
+        fileDAO.setCurrentVersion(fileId, versionNo);
+        auditDAO.logAction(user.getId(), fileId, "RESTORE_VERSION", "SUCCESS");
+    }
+
+    /** The uploader or an Owner, with upload rights and access to the file. Otherwise logs DENIED. */
+    private void requireVersionRights(User user, FileEntry entry, String action) throws Exception {
+        boolean isUploader = entry.getOwnerId() == user.getId();
+        boolean allowed = PermissionService.canPerform(user.getRole(), PermissionService.UPLOAD)
+                && PermissionService.canAccessFile(user.getRole(), entry.getAccessLevel(), isUploader)
+                && (isUploader || user.getRole() == Role.OWNER);
+        if (!allowed) {
+            auditDAO.logAction(user.getId(), entry.getId(), action, "DENIED");
+            throw new SecurityException("You cannot change the versions of this file.");
+        }
+    }
+
+    /** A short single-line note: no control characters, at most 200 characters. */
+    private static String cleanComment(String comment) {
+        if (comment == null) return "";
+        String c = comment.replaceAll("[\\p{Cntrl}]", " ").trim();
+        return c.length() > 200 ? c.substring(0, 200) : c;
     }
 
     /** SHA-256 of the original file, stored so the content can be proven unchanged. */

@@ -54,6 +54,44 @@ final class Dialogs {
         return result[0];
     }
 
+    /** A modal window with a body and a single Close button (used for the version history). */
+    static void show(Component parent, String title, String intro, JComponent body) {
+        Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
+        JDialog d = new JDialog(owner, Dialog.ModalityType.APPLICATION_MODAL);
+        d.setUndecorated(true);
+
+        Widgets.Card card = new Widgets.Card(new BorderLayout(0, 14)).fill(Theme.CREAM).line(Theme.NAVY).arc(18).pad(26, 28, 22, 28);
+        JPanel head = Widgets.transparent(new BorderLayout(0, 6));
+        head.add(Widgets.label(title, Theme.serif(Font.BOLD, 22f), Theme.NAVY), BorderLayout.NORTH);
+        if (intro != null) {
+            head.add(Widgets.label("<html><div style='width:560px'>" + Fmt.esc(intro) + "</div></html>",
+                    Theme.sans(Font.PLAIN, 13.5f), Theme.MUTED), BorderLayout.CENTER);
+        }
+        card.add(head, BorderLayout.NORTH);
+        card.add(body, BorderLayout.CENTER);
+
+        Widgets.Btn close = new Widgets.Btn("Close", Widgets.Kind.PRIMARY);
+        close.addActionListener(e -> d.dispose());
+        JPanel buttons = Widgets.transparent(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        buttons.setBorder(new EmptyBorder(8, 0, 0, 0));
+        buttons.add(close);
+        card.add(buttons, BorderLayout.SOUTH);
+
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBackground(Theme.NAVY);
+        root.setBorder(new EmptyBorder(1, 1, 1, 1));
+        root.add(card, BorderLayout.CENTER);
+        d.setContentPane(root);
+        d.getRootPane().registerKeyboardAction((ActionEvent e) -> d.dispose(),
+                KeyStroke.getKeyStroke("ESCAPE"), JComponent.WHEN_IN_FOCUSED_WINDOW);
+        d.getRootPane().setDefaultButton(close);
+        d.pack();
+        d.setLocationRelativeTo(owner);
+        try { d.setShape(new RoundRectangle2D.Float(0, 0, d.getWidth(), d.getHeight(), 20, 20)); }
+        catch (UnsupportedOperationException ignored) { }
+        d.setVisible(true);
+    }
+
     static boolean confirm(Component parent, String title, String message, String okLabel, boolean danger) {
         return form(parent, title, message, null, okLabel, danger);
     }

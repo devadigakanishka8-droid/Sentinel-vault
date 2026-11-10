@@ -1,6 +1,6 @@
 package com.sentinelvault.model;
 
-public class User {
+public class User implements java.io.Serializable {
     private final int id;
     private final String username;
     private final String passwordHash;

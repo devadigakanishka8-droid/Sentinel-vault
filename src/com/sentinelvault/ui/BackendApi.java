@@ -4,9 +4,12 @@ import com.sentinelvault.db.AuditLogDAO;
 import com.sentinelvault.db.UserDAO;
 import com.sentinelvault.model.AuditLogEntry;
 import com.sentinelvault.model.FileEntry;
+import com.sentinelvault.model.FolderEntry;
+import com.sentinelvault.model.VersionEntry;
 import com.sentinelvault.model.Role;
 import com.sentinelvault.model.User;
 import com.sentinelvault.service.FileService;
+import com.sentinelvault.service.FolderService;
 import com.sentinelvault.service.UserService;
 
 import java.io.File;
@@ -20,6 +23,7 @@ public class BackendApi implements Api {
 
     private final UserService userService = new UserService();
     private final FileService fileService = new FileService();
+    private final FolderService folderService = new FolderService();
     private final UserDAO userDAO = new UserDAO();
     private final AuditLogDAO auditDAO = new AuditLogDAO();
     private final Map<Integer, String> names = new ConcurrentHashMap<>();
@@ -56,6 +60,8 @@ public class BackendApi implements Api {
         return names.getOrDefault(userId, "user " + userId);
     }
 
+    @Override public Map<Integer, String> ownerNames() { return Map.copyOf(names); }
+
     @Override public int upload(User user, File source, Role accessLevel) throws Exception {
         return fileService.uploadFile(user, source, accessLevel);
     }
@@ -66,6 +72,22 @@ public class BackendApi implements Api {
 
     @Override public void delete(User user, int fileId) throws Exception {
         fileService.deleteFile(user, fileId);
+    }
+
+    @Override public List<FolderEntry> folders(User user) throws Exception { return folderService.listFolders(user); }
+    @Override public int createFolder(User user, String name) throws Exception { return folderService.createFolder(user, name); }
+    @Override public void moveFile(User user, int fileId, Integer folderId) throws Exception { folderService.moveFile(user, fileId, folderId); }
+    @Override public void deleteFolder(User user, int folderId) throws Exception { folderService.deleteFolder(user, folderId); }
+
+    @Override public List<VersionEntry> versions(User user, int fileId) throws Exception { return fileService.versions(user, fileId); }
+    @Override public int uploadVersion(User user, int fileId, File source, String comment) throws Exception {
+        return fileService.uploadNewVersion(user, fileId, source, comment);
+    }
+    @Override public void downloadVersion(User user, int fileId, int versionNo, File destination) throws Exception {
+        fileService.downloadVersion(user, fileId, versionNo, destination);
+    }
+    @Override public void restoreVersion(User user, int fileId, int versionNo) throws Exception {
+        fileService.restoreVersion(user, fileId, versionNo);
     }
 
     @Override public List<AuditLogEntry> audit(User user) throws Exception {

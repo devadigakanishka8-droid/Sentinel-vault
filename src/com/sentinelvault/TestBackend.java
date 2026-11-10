@@ -9,6 +9,7 @@ import com.sentinelvault.model.Role;
 import com.sentinelvault.model.User;
 import com.sentinelvault.security.KeyVault;
 import com.sentinelvault.service.FileService;
+import com.sentinelvault.service.FolderService;
 import com.sentinelvault.service.UserService;
 
 import java.io.File;
@@ -31,6 +32,9 @@ public class TestBackend {
     public static void main(String[] args) throws Exception {
         // ---------- 0. Master key ----------
         System.out.println("0. Master key vault");
+        check("a new master passphrase needs a special character",
+                KeyVault.validateNewPassphrase("abcdefgh12".toCharArray()) != null
+                && KeyVault.validateNewPassphrase("abcdef-12!".toCharArray()) == null);
         KeyVault.unlock(MASTER_PASSPHRASE.toCharArray());
         check("vault unlocks with the right passphrase", KeyVault.isUnlocked());
         KeyVault.lock();
@@ -201,6 +205,91 @@ public class TestBackend {
         check("a disabled account cannot log in", disabledBlocked);
         userService.setUserActive(owner, pwUser.getId(), true);
         check("re-enabled account can log in again", userService.login(name2, "newpass456") != null);
+
+        // ---------- 7b. Folders and versions ----------
+        System.out.println("7b. Folders and versions");
+        FolderService folders = new FolderService();
+        String folderName = "Reports-" + System.currentTimeMillis();
+        int folderId = folders.createFolder(editor, folderName);
+        check("editor can create a folder", folderId > 0);
+
+        boolean viewerFolderBlocked = false;
+        try { folders.createFolder(viewer, "Nope-" + System.currentTimeMillis()); }
+        catch (SecurityException e) { viewerFolderBlocked = true; }
+        check("viewer cannot create a folder", viewerFolderBlocked);
+
+        boolean dupFolderBlocked = false;
+        try { folders.createFolder(owner, folderName.toUpperCase()); }
+        catch (IllegalArgumentException e) { dupFolderBlocked = true; }
+        check("duplicate folder name is refused", dupFolderBlocked);
+
+        boolean badFolderName = false;
+        try { folders.createFolder(owner, "../evil"); }
+        catch (IllegalArgumentException e) { badFolderName = true; }
+        check("folder name with a slash is refused", badFolderName);
+
+        int docId = service.uploadFile(editor, original, Role.EDITOR);
+        folders.moveFile(editor, docId, folderId);
+        check("uploader can move a file into a folder",
+                fileDAO.getFile(docId).getFolderId() != null && fileDAO.getFile(docId).getFolderId() == folderId);
+
+        boolean viewerMoveBlocked = false;
+        try { folders.moveFile(viewer, docId, null); }
+        catch (SecurityException e) { viewerMoveBlocked = true; }
+        check("viewer cannot move a file", viewerMoveBlocked);
+        check("a folder with only hidden files is hidden from the viewer",
+                folders.listFolders(viewer).stream().noneMatch(f -> f.getId() == folderId));
+        check("the owner sees every folder",
+                folders.listFolders(owner).stream().anyMatch(f -> f.getId() == folderId));
+
+        boolean notEmptyBlocked = false;
+        try { folders.deleteFolder(owner, folderId); }
+        catch (IllegalArgumentException e) { notEmptyBlocked = true; }
+        check("a folder that still holds files cannot be deleted", notEmptyBlocked);
+
+        File verTwo = File.createTempFile("ver2", ".txt");
+        Files.writeString(verTwo.toPath(), "Second version text");
+        int verNo = service.uploadNewVersion(editor, docId, verTwo, "added a second paragraph");
+        check("uploader can add version 2", verNo == 2 && fileDAO.getFile(docId).getVersion() == 2);
+        check("version history lists both versions", service.versions(owner, docId).size() == 2);
+
+        File verOut = File.createTempFile("verout", ".txt");
+        service.downloadFile(owner, docId, verOut);
+        check("the current version is the newest one", Files.readString(verOut.toPath()).equals("Second version text"));
+        service.downloadVersion(owner, docId, 1, verOut);
+        check("an older version can still be downloaded",
+                Files.readString(verOut.toPath()).equals("Top secret SentinelVault data"));
+        check("every version has its own key",
+                !fileDAO.getVersion(docId, 1).wrappedKey().equals(fileDAO.getVersion(docId, 2).wrappedKey()));
+
+        boolean viewerVersionBlocked = false;
+        try { service.uploadNewVersion(viewer, docId, verTwo, "x"); }
+        catch (SecurityException e) { viewerVersionBlocked = true; }
+        check("viewer cannot add a version", viewerVersionBlocked);
+        boolean viewerHistoryBlocked = false;
+        try { service.versions(viewer, docId); }
+        catch (SecurityException e) { viewerHistoryBlocked = true; }
+        check("viewer cannot read the history of a file they cannot open", viewerHistoryBlocked);
+
+        service.restoreVersion(owner, docId, 1);
+        service.downloadFile(owner, docId, verOut);
+        check("owner can make an older version current again",
+                fileDAO.getFile(docId).getVersion() == 1
+                        && Files.readString(verOut.toPath()).equals("Top secret SentinelVault data"));
+
+        String pathOne = fileDAO.getVersion(docId, 1).storedPath();
+        String pathTwo = fileDAO.getVersion(docId, 2).storedPath();
+        service.deleteFile(owner, docId);
+        check("deleting a file removes every encrypted version from disk",
+                !new File(pathOne).exists() && !new File(pathTwo).exists());
+        check("deleting a file destroys every version's key",
+                fileDAO.getVersion(docId, 1).wrappedKey().isEmpty() && fileDAO.getVersion(docId, 2).wrappedKey().isEmpty());
+
+        folders.deleteFolder(owner, folderId);
+        check("an empty folder can be deleted by the owner",
+                folders.listFolders(owner).stream().noneMatch(f -> f.getId() == folderId));
+        verTwo.delete();
+        verOut.delete();
 
         // ---------- 8. Audit log ----------
         System.out.println("8. Audit log");

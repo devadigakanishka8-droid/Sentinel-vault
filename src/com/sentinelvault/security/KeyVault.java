@@ -72,6 +72,24 @@ public class KeyVault {
         masterKey = derived;
     }
 
+    /** Rules for a NEW master passphrase. Returns an error message, or null if it is fine. */
+    public static String validateNewPassphrase(char[] p) {
+        if (p == null || p.length < 8) {
+            return "The master passphrase must be at least 8 characters.";
+        }
+        boolean special = false;
+        for (char c : p) {
+            if (!Character.isLetterOrDigit(c) && !Character.isWhitespace(c)) {
+                special = true;
+                break;
+            }
+        }
+        if (!special) {
+            return "The master passphrase needs at least one special character, like ! @ # $ % - _";
+        }
+        return null;
+    }
+
     public static synchronized void lock() {
         masterKey = null;
     }

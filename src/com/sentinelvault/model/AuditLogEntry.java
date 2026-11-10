@@ -1,6 +1,6 @@
 package com.sentinelvault.model;
 
-public class AuditLogEntry {
+public class AuditLogEntry implements java.io.Serializable {
     private final String timestamp;
     private final String username;
     private final String action;

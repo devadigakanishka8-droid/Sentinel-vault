@@ -9,6 +9,8 @@ import javax.swing.*;
 public class App {
 
     private static Api api;
+    /** True when this program holds the vault itself; false when it is only a client of a server. */
+    private static boolean local = true;
 
     public static void main(String[] args) {
         System.setProperty("awt.useSystemAAFontSettings", "on");
@@ -26,16 +28,25 @@ public class App {
             System.exit(1);
         }
         api = new BackendApi();
+        local = true;
         Runtime.getRuntime().addShutdownHook(new Thread(KeyVault::lock));   // keys never outlive the program
+        showLogin();
+    }
+
+    /** Starts the sign-in flow against a given Api. Used by ClientApp, which has no vault of its own. */
+    static void launch(Api remote, boolean holdsVault) {
+        api = remote;
+        local = holdsVault;
         showLogin();
     }
 
     /** Asks for the master passphrase if the vault is locked, then shows the sign-in screen. */
     static void showLogin() {
-        if (!KeyVault.isUnlocked() && !UnlockDialog.ask()) System.exit(0);
+        if (local && !KeyVault.isUnlocked() && !UnlockDialog.ask()) System.exit(0);
         new LoginFrame(api, user -> {
             MainFrame main = new MainFrame(api, user, lockVault -> {
-                if (lockVault) KeyVault.lock();
+                if (local) { if (lockVault) KeyVault.lock(); }
+                else if (api instanceof RemoteApi r) r.logout();
                 showLogin();
             });
             main.setVisible(true);

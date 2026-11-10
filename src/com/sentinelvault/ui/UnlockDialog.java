@@ -9,13 +9,13 @@ import java.io.File;
 import java.util.Arrays;
 
 /** Asks for the master passphrase that unlocks the vault's encryption keys. */
-final class UnlockDialog {
+public final class UnlockDialog {
     private UnlockDialog() {}
 
     private static int attempts = 0;
 
     /** Returns true once the vault is unlocked, false if the user quits. */
-    static boolean ask() {
+    public static boolean ask() {
         boolean firstRun = !new File("vault_storage/master.salt").exists();
         Widgets.PassField pass = new Widgets.PassField(true);
         Widgets.PassField again = new Widgets.PassField(true);
@@ -44,7 +44,7 @@ final class UnlockDialog {
         JLabel title = Widgets.label(firstRun ? "Master passphrase" : "Unlock the vault",
                 Theme.serif(Font.BOLD, 26f), Theme.CREAM);
         JTextArea note = new JTextArea(firstRun
-                ? "It protects every file key. At least 8 characters. If you forget it, files cannot be recovered."
+                ? "It protects every file key. At least 8 characters, including one special character. If you forget it, files cannot be recovered."
                 : "Enter the master passphrase to decrypt your files.");
         note.setEditable(false);
         note.setFocusable(false);
@@ -54,7 +54,7 @@ final class UnlockDialog {
         note.setBorder(null);
         note.setFont(Theme.sans(Font.PLAIN, 13f));
         note.setForeground(Theme.MUTED_DARK);
-        Dimension noteSize = new Dimension(360, firstRun ? 58 : 40);
+        Dimension noteSize = new Dimension(360, firstRun ? 72 : 40);
         note.setPreferredSize(noteSize);
         note.setMaximumSize(noteSize);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -88,6 +88,10 @@ final class UnlockDialog {
             char[] a = pass.getPassword(), b = again.getPassword();
             try {
                 if (firstRun && !Arrays.equals(a, b)) { msg.setText("The two passphrases do not match."); return; }
+                if (firstRun) {
+                    String problem = KeyVault.validateNewPassphrase(a);
+                    if (problem != null) { msg.setText(problem); return; }
+                }
                 d.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
                 KeyVault.unlock(a);
                 unlocked[0] = true;

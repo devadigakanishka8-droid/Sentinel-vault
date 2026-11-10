@@ -52,4 +52,36 @@ final class FileActions {
                 v -> { ctx.toast("Deleted " + file.getFilename() + ". Its key has been destroyed.", false); done.run(); },
                 t -> ctx.toast(Async.message(t), true));
     }
+
+    /** Adds a new version of an existing file, with an optional note about what changed. */
+    static void uploadVersion(Ctx ctx, Component parent, FileEntry file, Runnable done) {
+        FileDialog fd = new FileDialog((Frame) ctx.window(), "Choose the new version of " + file.getFilename(), FileDialog.LOAD);
+        fd.setVisible(true);
+        if (fd.getFile() == null) return;
+        File source = new File(fd.getDirectory(), fd.getFile());
+
+        Widgets.Field note = new Widgets.Field(false).hint("What changed? (optional)");
+        boolean ok = Dialogs.form(parent, "Upload a new version",
+                "“" + source.getName() + "” becomes the current version of “" + file.getFilename()
+                        + "”. Older versions are kept.",
+                Dialogs.labelled("Note", note), "Encrypt & add version", false);
+        if (!ok) return;
+        String comment = note.getText();
+
+        ctx.toast("Encrypting " + source.getName() + "…", false);
+        Async.run(() -> ctx.api().uploadVersion(ctx.user(), file.getId(), source, comment),
+                v -> { ctx.toast("Version " + v + " of " + file.getFilename() + " saved.", false); done.run(); },
+                t -> ctx.toast(Async.message(t), true));
+    }
+
+    static void downloadVersion(Ctx ctx, FileEntry file, int versionNo) {
+        FileDialog fd = new FileDialog((Frame) ctx.window(), "Save decrypted copy", FileDialog.SAVE);
+        fd.setFile(file.getFilename());
+        fd.setVisible(true);
+        if (fd.getFile() == null) return;
+        File target = new File(fd.getDirectory(), fd.getFile());
+        Async.run(() -> { ctx.api().downloadVersion(ctx.user(), file.getId(), versionNo, target); return null; },
+                v -> ctx.toast("Version " + versionNo + " decrypted and saved: " + target.getName(), false),
+                t -> ctx.toast(Async.message(t), true));
+    }
 }
